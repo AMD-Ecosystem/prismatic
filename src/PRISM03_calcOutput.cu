@@ -696,10 +696,15 @@ namespace Prismatic {
 			cudaErrchk(cudaFree(cuda_pars.integratedOutput_ds[s]));
 		}
 
+		// Skip cudaDeviceReset on HIP: hipDeviceReset destroys hipFFT internal
+		// state, causing subsequent hipfftPlanMany calls to fail with
+		// hipErrorInvalidValue. The memory/streams/plans are already freed above.
+#ifndef USE_HIP
 		for (auto j = 0; j < pars.meta.numGPUs; ++j) {
 			cudaErrchk(cudaSetDevice(j));
 			cudaErrchk(cudaDeviceReset());
 		}
+#endif
 
 		delete[] cuda_pars.streams;
 		delete[] cuda_pars.cufftPlans;
@@ -725,6 +730,40 @@ namespace Prismatic {
 	// the bounds checking operation can be skipped -- the latter threads just operate on meaningless values
 	template <size_t BlockSize_numBeams>
 	__device__  void warpReduce_cx(volatile cuFloatComplex* sdata, int idx){
+#if defined(USE_HIP)
+		// On HIP/AMD, the 64-lane wavefront requires explicit __syncthreads() for correctness.
+		// The CUDA warp-synchronous optimization (relying on volatile and implicit lockstep)
+		// races when the low 32 lanes and high 32 lanes of a wave64 are not in sync.
+		if (BlockSize_numBeams >= 64 && idx < 32){
+			sdata[idx].x += sdata[idx + 32].x;
+			sdata[idx].y += sdata[idx + 32].y;
+		}
+		__syncthreads();
+		if (BlockSize_numBeams >= 32 && idx < 16){
+			sdata[idx].x += sdata[idx + 16].x;
+			sdata[idx].y += sdata[idx + 16].y;
+		}
+		__syncthreads();
+		if (BlockSize_numBeams >= 16 && idx < 8){
+			sdata[idx].x += sdata[idx + 8].x;
+			sdata[idx].y += sdata[idx + 8].y;
+		}
+		__syncthreads();
+		if (BlockSize_numBeams >= 8 && idx < 4){
+			sdata[idx].x += sdata[idx + 4].x;
+			sdata[idx].y += sdata[idx + 4].y;
+		}
+		__syncthreads();
+		if (BlockSize_numBeams >= 4 && idx < 2){
+			sdata[idx].x += sdata[idx + 2].x;
+			sdata[idx].y += sdata[idx + 2].y;
+		}
+		__syncthreads();
+		if (BlockSize_numBeams >= 2 && idx < 1){
+			sdata[idx].x += sdata[idx + 1].x;
+			sdata[idx].y += sdata[idx + 1].y;
+		}
+#else
 		// When 32 or fewer threads remain, there is only a single warp remaining and no need to synchronize; however,
 		// the volatile keyword is necessary otherwise the compiler will optimize these operations into registers
 		// and the result will be incorrect
@@ -752,10 +791,37 @@ namespace Prismatic {
 			sdata[idx].x += sdata[idx + 1].x;
 			sdata[idx].y += sdata[idx + 1].y;
 		}
+#endif
 	}
 
 	template <>
 	__device__  void warpReduce_cx<32>(volatile cuFloatComplex* sdata, int idx){
+#if defined(USE_HIP)
+		if (idx < 16) {
+			sdata[idx].x += sdata[idx + 16].x;
+			sdata[idx].y += sdata[idx + 16].y;
+		}
+		__syncthreads();
+		if (idx < 8) {
+			sdata[idx].x += sdata[idx + 8].x;
+			sdata[idx].y += sdata[idx + 8].y;
+		}
+		__syncthreads();
+		if (idx < 4) {
+			sdata[idx].x += sdata[idx + 4].x;
+			sdata[idx].y += sdata[idx + 4].y;
+		}
+		__syncthreads();
+		if (idx < 2) {
+			sdata[idx].x += sdata[idx + 2].x;
+			sdata[idx].y += sdata[idx + 2].y;
+		}
+		__syncthreads();
+		if (idx < 1) {
+			sdata[idx].x += sdata[idx + 1].x;
+			sdata[idx].y += sdata[idx + 1].y;
+		}
+#else
 		// When 32 or fewer threads remain, there is only a single warp remaining and no need to synchronize; however,
 		// the volatile keyword is necessary otherwise the compiler will optimize these operations into registers
 		// and the result will be incorrect
@@ -771,10 +837,32 @@ namespace Prismatic {
 			sdata[idx].y += sdata[idx + 2].y;
 			sdata[idx].x += sdata[idx + 1].x;
 			sdata[idx].y += sdata[idx + 1].y;
+#endif
 	}
 
 	template <>
 	__device__  void warpReduce_cx<16>(volatile cuFloatComplex* sdata, int idx){
+#if defined(USE_HIP)
+		if (idx < 8) {
+			sdata[idx].x += sdata[idx + 8].x;
+			sdata[idx].y += sdata[idx + 8].y;
+		}
+		__syncthreads();
+		if (idx < 4) {
+			sdata[idx].x += sdata[idx + 4].x;
+			sdata[idx].y += sdata[idx + 4].y;
+		}
+		__syncthreads();
+		if (idx < 2) {
+			sdata[idx].x += sdata[idx + 2].x;
+			sdata[idx].y += sdata[idx + 2].y;
+		}
+		__syncthreads();
+		if (idx < 1) {
+			sdata[idx].x += sdata[idx + 1].x;
+			sdata[idx].y += sdata[idx + 1].y;
+		}
+#else
 		// When 32 or fewer threads remain, there is only a single warp remaining and no need to synchronize; however,
 		// the volatile keyword is necessary otherwise the compiler will optimize these operations into registers
 		// and the result will be incorrect
@@ -788,10 +876,27 @@ namespace Prismatic {
 		sdata[idx].y += sdata[idx + 2].y;
 		sdata[idx].x += sdata[idx + 1].x;
 		sdata[idx].y += sdata[idx + 1].y;
+#endif
 	}
 
 	template <>
 	__device__  void warpReduce_cx<8>(volatile cuFloatComplex* sdata, int idx){
+#if defined(USE_HIP)
+		if (idx < 4) {
+			sdata[idx].x += sdata[idx + 4].x;
+			sdata[idx].y += sdata[idx + 4].y;
+		}
+		__syncthreads();
+		if (idx < 2) {
+			sdata[idx].x += sdata[idx + 2].x;
+			sdata[idx].y += sdata[idx + 2].y;
+		}
+		__syncthreads();
+		if (idx < 1) {
+			sdata[idx].x += sdata[idx + 1].x;
+			sdata[idx].y += sdata[idx + 1].y;
+		}
+#else
 		// When 32 or fewer threads remain, there is only a single warp remaining and no need to synchronize; however,
 		// the volatile keyword is necessary otherwise the compiler will optimize these operations into registers
 		// and the result will be incorrect
@@ -803,11 +908,23 @@ namespace Prismatic {
 		sdata[idx].y += sdata[idx + 2].y;
 		sdata[idx].x += sdata[idx + 1].x;
 		sdata[idx].y += sdata[idx + 1].y;
+#endif
 	}
 
 
 	template <>
 	__device__  void warpReduce_cx<4>(volatile cuFloatComplex* sdata, int idx){
+#if defined(USE_HIP)
+		if (idx < 2) {
+			sdata[idx].x += sdata[idx + 2].x;
+			sdata[idx].y += sdata[idx + 2].y;
+		}
+		__syncthreads();
+		if (idx < 1) {
+			sdata[idx].x += sdata[idx + 1].x;
+			sdata[idx].y += sdata[idx + 1].y;
+		}
+#else
 		// When 32 or fewer threads remain, there is only a single warp remaining and no need to synchronize; however,
 		// the volatile keyword is necessary otherwise the compiler will optimize these operations into registers
 		// and the result will be incorrect
@@ -817,10 +934,17 @@ namespace Prismatic {
 		}
 		sdata[idx].x += sdata[idx + 1].x;
 		sdata[idx].y += sdata[idx + 1].y;
+#endif
 	}
 
 	template <>
 	__device__  void warpReduce_cx<2>(volatile cuFloatComplex* sdata, int idx){
+#if defined(USE_HIP)
+		if (idx < 1) {
+			sdata[idx].x += sdata[idx + 1].x;
+			sdata[idx].y += sdata[idx + 1].y;
+		}
+#else
 		// When 32 or fewer threads remain, there is only a single warp remaining and no need to synchronize; however,
 		// the volatile keyword is necessary otherwise the compiler will optimize these operations into registers
 		// and the result will be incorrect
@@ -828,6 +952,7 @@ namespace Prismatic {
 			sdata[idx].x += sdata[idx + 1].x;
 			sdata[idx].y += sdata[idx + 1].y;
 		}
+#endif
 	}
 
 	template <>
@@ -838,6 +963,38 @@ namespace Prismatic {
 
 	template <size_t BlockSize_numBeams>
 	__device__  void warpReduce_cx(volatile cuDoubleComplex* sdata, int idx){
+#if defined(USE_HIP)
+		// On HIP/AMD, the 64-lane wavefront requires explicit __syncthreads() for correctness.
+		if (BlockSize_numBeams >= 64 && idx < 32){
+			sdata[idx].x += sdata[idx + 32].x;
+			sdata[idx].y += sdata[idx + 32].y;
+		}
+		__syncthreads();
+		if (BlockSize_numBeams >= 32 && idx < 16){
+			sdata[idx].x += sdata[idx + 16].x;
+			sdata[idx].y += sdata[idx + 16].y;
+		}
+		__syncthreads();
+		if (BlockSize_numBeams >= 16 && idx < 8){
+			sdata[idx].x += sdata[idx + 8].x;
+			sdata[idx].y += sdata[idx + 8].y;
+		}
+		__syncthreads();
+		if (BlockSize_numBeams >= 8 && idx < 4){
+			sdata[idx].x += sdata[idx + 4].x;
+			sdata[idx].y += sdata[idx + 4].y;
+		}
+		__syncthreads();
+		if (BlockSize_numBeams >= 4 && idx < 2){
+			sdata[idx].x += sdata[idx + 2].x;
+			sdata[idx].y += sdata[idx + 2].y;
+		}
+		__syncthreads();
+		if (BlockSize_numBeams >= 2 && idx < 1){
+			sdata[idx].x += sdata[idx + 1].x;
+			sdata[idx].y += sdata[idx + 1].y;
+		}
+#else
 		// When 32 or fewer threads remain, there is only a single warp remaining and no need to synchronize; however,
 		// the volatile keyword is necessary otherwise the compiler will optimize these operations into registers
 		// and the result will be incorrect
@@ -865,10 +1022,37 @@ namespace Prismatic {
 			sdata[idx].x += sdata[idx + 1].x;
 			sdata[idx].y += sdata[idx + 1].y;
 		}
+#endif
 	}
 
 	template <>
 	__device__  void warpReduce_cx<32>(volatile cuDoubleComplex* sdata, int idx){
+#if defined(USE_HIP)
+		if (idx < 16) {
+			sdata[idx].x += sdata[idx + 16].x;
+			sdata[idx].y += sdata[idx + 16].y;
+		}
+		__syncthreads();
+		if (idx < 8) {
+			sdata[idx].x += sdata[idx + 8].x;
+			sdata[idx].y += sdata[idx + 8].y;
+		}
+		__syncthreads();
+		if (idx < 4) {
+			sdata[idx].x += sdata[idx + 4].x;
+			sdata[idx].y += sdata[idx + 4].y;
+		}
+		__syncthreads();
+		if (idx < 2) {
+			sdata[idx].x += sdata[idx + 2].x;
+			sdata[idx].y += sdata[idx + 2].y;
+		}
+		__syncthreads();
+		if (idx < 1) {
+			sdata[idx].x += sdata[idx + 1].x;
+			sdata[idx].y += sdata[idx + 1].y;
+		}
+#else
 		// When 32 or fewer threads remain, there is only a single warp remaining and no need to synchronize; however,
 		// the volatile keyword is necessary otherwise the compiler will optimize these operations into registers
 		// and the result will be incorrect
@@ -884,10 +1068,32 @@ namespace Prismatic {
 		sdata[idx].y += sdata[idx + 2].y;
 		sdata[idx].x += sdata[idx + 1].x;
 		sdata[idx].y += sdata[idx + 1].y;
+#endif
 	}
 
 	template <>
 	__device__  void warpReduce_cx<16>(volatile cuDoubleComplex* sdata, int idx){
+#if defined(USE_HIP)
+		if (idx < 8) {
+			sdata[idx].x += sdata[idx + 8].x;
+			sdata[idx].y += sdata[idx + 8].y;
+		}
+		__syncthreads();
+		if (idx < 4) {
+			sdata[idx].x += sdata[idx + 4].x;
+			sdata[idx].y += sdata[idx + 4].y;
+		}
+		__syncthreads();
+		if (idx < 2) {
+			sdata[idx].x += sdata[idx + 2].x;
+			sdata[idx].y += sdata[idx + 2].y;
+		}
+		__syncthreads();
+		if (idx < 1) {
+			sdata[idx].x += sdata[idx + 1].x;
+			sdata[idx].y += sdata[idx + 1].y;
+		}
+#else
 		// When 32 or fewer threads remain, there is only a single warp remaining and no need to synchronize; however,
 		// the volatile keyword is necessary otherwise the compiler will optimize these operations into registers
 		// and the result will be incorrect
@@ -901,10 +1107,27 @@ namespace Prismatic {
 		sdata[idx].y += sdata[idx + 2].y;
 		sdata[idx].x += sdata[idx + 1].x;
 		sdata[idx].y += sdata[idx + 1].y;
+#endif
 	}
 
 	template <>
 	__device__  void warpReduce_cx<8>(volatile cuDoubleComplex* sdata, int idx){
+#if defined(USE_HIP)
+		if (idx < 4) {
+			sdata[idx].x += sdata[idx + 4].x;
+			sdata[idx].y += sdata[idx + 4].y;
+		}
+		__syncthreads();
+		if (idx < 2) {
+			sdata[idx].x += sdata[idx + 2].x;
+			sdata[idx].y += sdata[idx + 2].y;
+		}
+		__syncthreads();
+		if (idx < 1) {
+			sdata[idx].x += sdata[idx + 1].x;
+			sdata[idx].y += sdata[idx + 1].y;
+		}
+#else
 		// When 32 or fewer threads remain, there is only a single warp remaining and no need to synchronize; however,
 		// the volatile keyword is necessary otherwise the compiler will optimize these operations into registers
 		// and the result will be incorrect
@@ -916,11 +1139,23 @@ namespace Prismatic {
 		sdata[idx].y += sdata[idx + 2].y;
 		sdata[idx].x += sdata[idx + 1].x;
 		sdata[idx].y += sdata[idx + 1].y;
+#endif
 	}
 
 
 	template <>
 	__device__  void warpReduce_cx<4>(volatile cuDoubleComplex* sdata, int idx){
+#if defined(USE_HIP)
+		if (idx < 2) {
+			sdata[idx].x += sdata[idx + 2].x;
+			sdata[idx].y += sdata[idx + 2].y;
+		}
+		__syncthreads();
+		if (idx < 1) {
+			sdata[idx].x += sdata[idx + 1].x;
+			sdata[idx].y += sdata[idx + 1].y;
+		}
+#else
 		// When 32 or fewer threads remain, there is only a single warp remaining and no need to synchronize; however,
 		// the volatile keyword is necessary otherwise the compiler will optimize these operations into registers
 		// and the result will be incorrect
@@ -930,10 +1165,17 @@ namespace Prismatic {
 		}
 		sdata[idx].x += sdata[idx + 1].x;
 		sdata[idx].y += sdata[idx + 1].y;
+#endif
 	}
 
 	template <>
 	__device__  void warpReduce_cx<2>(volatile cuDoubleComplex* sdata, int idx){
+#if defined(USE_HIP)
+		if (idx < 1) {
+			sdata[idx].x += sdata[idx + 1].x;
+			sdata[idx].y += sdata[idx + 1].y;
+		}
+#else
 		// When 32 or fewer threads remain, there is only a single warp remaining and no need to synchronize; however,
 		// the volatile keyword is necessary otherwise the compiler will optimize these operations into registers
 		// and the result will be incorrect
@@ -941,6 +1183,7 @@ namespace Prismatic {
 			sdata[idx].x += sdata[idx + 1].x;
 			sdata[idx].y += sdata[idx + 1].y;
 		}
+#endif
 	}
 	template <>
 	__device__  void warpReduce_cx<1>(volatile cuDoubleComplex* sdata, int idx){
@@ -1629,43 +1872,43 @@ __global__ void scaleReduceS(const cuFloatComplex *permutedScompact_d,
 			// Launch kernel. Block size must be visible at compile time so we use a switch statement
 			switch (BlockSize_numBeams) {
 				case 1024 :
-					scaleReduceS<1024, 1> << < grid, block, smem, stream >> > (
+					scaleReduceS<1024, 1> <<< grid, block, smem, stream >>> (
 							permutedScompact_d, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.Scompact.get_dimj(),
 							pars.Scompact.get_dimi(), pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				case 512 :
-					scaleReduceS<512, 1> << < grid, block, smem, stream >> > (
+					scaleReduceS<512, 1> <<< grid, block, smem, stream >>> (
 							permutedScompact_d, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.Scompact.get_dimj(),
 							pars.Scompact.get_dimi(), pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				case 256 :
-					scaleReduceS<256, 2> << < grid, block, smem, stream >> > (
+					scaleReduceS<256, 2> <<< grid, block, smem, stream >>> (
 							permutedScompact_d, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.Scompact.get_dimj(),
 							pars.Scompact.get_dimi(), pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				case 128 :
-					scaleReduceS<128, 4> << < grid, block, smem, stream >> > (
+					scaleReduceS<128, 4> <<< grid, block, smem, stream >>> (
 							permutedScompact_d, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.Scompact.get_dimj(),
 							pars.Scompact.get_dimi(), pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				case 64 :
-					scaleReduceS<64, 8> << < grid, block, smem, stream >> > (
+					scaleReduceS<64, 8> <<< grid, block, smem, stream >>> (
 							permutedScompact_d, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.Scompact.get_dimj(),
 							pars.Scompact.get_dimi(), pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				case 32 :
-					scaleReduceS<32, 16> << < grid, block, smem, stream >> > (
+					scaleReduceS<32, 16> <<< grid, block, smem, stream >>> (
 							permutedScompact_d, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.Scompact.get_dimj(),
 							pars.Scompact.get_dimi(), pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				case 16 :
-					scaleReduceS<16, 32> << < grid, block, smem, stream >> > (
+					scaleReduceS<16, 32> <<< grid, block, smem, stream >>> (
 							permutedScompact_d, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.Scompact.get_dimj(),
 							pars.Scompact.get_dimi(), pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				case 8 :
-					scaleReduceS<8, 64> << < grid, block, smem, stream >> > (
+					scaleReduceS<8, 64> <<< grid, block, smem, stream >>> (
 							permutedScompact_d, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.Scompact.get_dimj(),
 							pars.Scompact.get_dimi(), pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				case 4 :
-					scaleReduceS<4, 128> << < grid, block, smem, stream >> > (
+					scaleReduceS<4, 128> <<< grid, block, smem, stream >>> (
 							permutedScompact_d, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.Scompact.get_dimj(),
 							pars.Scompact.get_dimi(), pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				default :
-					scaleReduceS<1, 512> << < grid, block, smem, stream >> > (
+					scaleReduceS<1, 512> <<< grid, block, smem, stream >>> (
 							permutedScompact_d, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.Scompact.get_dimj(),
 							pars.Scompact.get_dimi(), pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 			}
@@ -1844,43 +2087,43 @@ __global__ void scaleReduceS(const cuFloatComplex *permutedScompact_d,
 //		// Launch kernel. Block size must be visible at compile time so we use a switch statement
 			switch (BlockSize_numBeams) {
 				case 1024 :
-					scaleReduceS<1024> << < grid, block, smem, stream >> > (
+					scaleReduceS<1024> <<< grid, block, smem, stream >>> (
 							permutedScompact_ds, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.imageSizeReduce[0],
 							pars.imageSizeReduce[1], pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				case 512 :
-					scaleReduceS<512> << < grid, block, smem, stream >> > (
+					scaleReduceS<512> <<< grid, block, smem, stream >>> (
 							permutedScompact_ds, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.imageSizeReduce[0],
 							pars.imageSizeReduce[1], pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				case 256 :
-					scaleReduceS<256> << < grid, block, smem, stream >> > (
+					scaleReduceS<256> <<< grid, block, smem, stream >>> (
 							permutedScompact_ds, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.imageSizeReduce[0],
 							pars.imageSizeReduce[1], pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				case 128 :
-					scaleReduceS<128> << < grid, block, smem, stream >> > (
+					scaleReduceS<128> <<< grid, block, smem, stream >>> (
 							permutedScompact_ds, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.imageSizeReduce[0],
 							pars.imageSizeReduce[1], pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				case 64 :
-					scaleReduceS<64> << < grid, block, smem, stream >> > (
+					scaleReduceS<64> <<< grid, block, smem, stream >>> (
 							permutedScompact_ds, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.imageSizeReduce[0],
 							pars.imageSizeReduce[1], pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				case 32 :
-					scaleReduceS<32> << < grid, block, smem, stream >> > (
+					scaleReduceS<32> <<< grid, block, smem, stream >>> (
 							permutedScompact_ds, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.imageSizeReduce[0],
 							pars.imageSizeReduce[1], pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				case 16 :
-					scaleReduceS<16> << < grid, block, smem, stream >> > (
+					scaleReduceS<16> <<< grid, block, smem, stream >>> (
 							permutedScompact_ds, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.imageSizeReduce[0],
 							pars.imageSizeReduce[1], pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				case 8 :
-					scaleReduceS<8> << < grid, block, smem, stream >> > (
+					scaleReduceS<8> <<< grid, block, smem, stream >>> (
 							permutedScompact_ds, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.imageSizeReduce[0],
 							pars.imageSizeReduce[1], pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				case 4 :
-					scaleReduceS<4> << < grid, block, smem, stream >> > (
+					scaleReduceS<4> <<< grid, block, smem, stream >>> (
 							permutedScompact_ds, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.imageSizeReduce[0],
 							pars.imageSizeReduce[1], pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				default :
-					scaleReduceS<2> << < grid, block, smem, stream >> > (
+					scaleReduceS<2> <<< grid, block, smem, stream >>> (
 							permutedScompact_ds, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.imageSizeReduce[0],
 							pars.imageSizeReduce[1], pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 			}
@@ -1895,43 +2138,43 @@ __global__ void scaleReduceS(const cuFloatComplex *permutedScompact_d,
 			// Launch kernel. Block size must be visible at compile time so we use a switch statement
 			switch (BlockSize_numBeams) {
 				case 1024 :
-					scaleReduceS<1024, 1> << < grid, block, smem, stream >> > (
+					scaleReduceS<1024, 1> <<< grid, block, smem, stream >>> (
                             permutedScompact_ds, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.imageSizeReduce[0],
                             pars.imageSizeReduce[1], pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				case 512 :
-					scaleReduceS<512, 1> << < grid, block, smem, stream >> > (
+					scaleReduceS<512, 1> <<< grid, block, smem, stream >>> (
                             permutedScompact_ds, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.imageSizeReduce[0],
                             pars.imageSizeReduce[1], pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				case 256 :
-					scaleReduceS<256, 2> << < grid, block, smem, stream >> > (
+					scaleReduceS<256, 2> <<< grid, block, smem, stream >>> (
                             permutedScompact_ds, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.imageSizeReduce[0],
                             pars.imageSizeReduce[1], pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				case 128 :
-					scaleReduceS<128, 4> << < grid, block, smem, stream >> > (
+					scaleReduceS<128, 4> <<< grid, block, smem, stream >>> (
                             permutedScompact_ds, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.imageSizeReduce[0],
                             pars.imageSizeReduce[1], pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				case 64 :
-					scaleReduceS<64, 8> << < grid, block, smem, stream >> > (
+					scaleReduceS<64, 8> <<< grid, block, smem, stream >>> (
                             permutedScompact_ds, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.imageSizeReduce[0],
                             pars.imageSizeReduce[1], pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				case 32 :
-					scaleReduceS<32, 16> << < grid, block, smem, stream >> > (
+					scaleReduceS<32, 16> <<< grid, block, smem, stream >>> (
                             permutedScompact_ds, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.imageSizeReduce[0],
                             pars.imageSizeReduce[1], pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				case 16 :
-					scaleReduceS<16, 32> << < grid, block, smem, stream >> > (
+					scaleReduceS<16, 32> <<< grid, block, smem, stream >>> (
                             permutedScompact_ds, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.imageSizeReduce[0],
                             pars.imageSizeReduce[1], pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				case 8 :
-					scaleReduceS<8, 64> << < grid, block, smem, stream >> > (
+					scaleReduceS<8, 64> <<< grid, block, smem, stream >>> (
                             permutedScompact_ds, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.imageSizeReduce[0],
                             pars.imageSizeReduce[1], pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				case 4 :
-					scaleReduceS<4, 128> << < grid, block, smem, stream >> > (
+					scaleReduceS<4, 128> <<< grid, block, smem, stream >>> (
                             permutedScompact_ds, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.imageSizeReduce[0],
                             pars.imageSizeReduce[1], pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 				default :
-					scaleReduceS<1, 512> << < grid, block, smem, stream >> > (
+					scaleReduceS<1, 512> <<< grid, block, smem, stream >>> (
                             permutedScompact_ds, phaseCoeffs_ds, psi_ds, y_ds, x_ds, pars.numberBeams, pars.imageSizeReduce[0],
                             pars.imageSizeReduce[1], pars.imageSizeReduce[0], pars.imageSizeReduce[1]);break;
 			}

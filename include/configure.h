@@ -25,7 +25,7 @@
 
 #ifdef PRISMATIC_ENABLE_GPU
 //#define CUDA_API_PER_THREAD_DEFAULT_STREAM
-#include <cuda_runtime.h>
+#include "cuda_to_hip.h"
 #endif //PRISMATIC_ENABLE_GPU
 
 #ifdef PRISMATIC_BUILDING_GUI

@@ -14,7 +14,7 @@
 #ifndef PRISMATIC_UTILITY_CUH
 #define PRISMATIC_UTILITY_CUH
 #define PI 3.14159265359
-#include "cuComplex.h"
+#include "cuda_to_hip.h"
 #include "configure.h"
 #include "utility.h"
 __device__ __forceinline__ cuDoubleComplex exp_cx(const cuDoubleComplex a);

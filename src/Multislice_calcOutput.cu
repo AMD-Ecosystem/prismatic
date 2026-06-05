@@ -21,8 +21,7 @@
 
 #include "Multislice_calcOutput.cuh"
 #include "Multislice_calcOutput.h"
-#include "cuComplex.h"
-#include "cufft.h"
+#include "cuda_to_hip.h"
 #include "utility.cuh"
 #include "fileIO.cuh"
 #include "params.cuh"
@@ -599,10 +598,15 @@ namespace Prismatic{
 			cudaSetDevice(j % pars.meta.numGPUs);
 			cudaErrchk(cudaStreamDestroy(cuda_pars.streams[j]));
 		}
+		// Skip cudaDeviceReset on HIP: hipDeviceReset destroys hipFFT internal
+		// state, causing subsequent hipfftPlanMany calls to fail with
+		// hipErrorInvalidValue. The memory/streams/plans are already freed above.
+#ifndef USE_HIP
 		for (auto j = 0; j < pars.meta.numGPUs; ++j) {
 			cudaErrchk(cudaSetDevice(j));
 			cudaErrchk(cudaDeviceReset());
 		}
+#endif
 
 		delete[] cuda_pars.streams;
 		delete[] cuda_pars.cufftPlans;
@@ -688,7 +692,7 @@ namespace Prismatic{
 			PRISMATIC_FLOAT_PRECISION yp = pars.yp[ay];
 			PRISMATIC_FLOAT_PRECISION xp = pars.xp[ax];
 
-			initializePsi << < (psi_size - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0, stream >> >
+			initializePsi <<< (psi_size - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0, stream >>>
                 (psi_ds + (batch_idx * psi_size), PsiProbeInit_d, qya_d, qxa_d, psi_size, yp, xp);
 		}
 		size_t currentSlice = 0;
@@ -696,20 +700,20 @@ namespace Prismatic{
 			for (auto planeNum = 0; planeNum < pars.numPlanes; ++planeNum) {
 				cufftErrchk(PRISMATIC_CUFFT_EXECUTE(plan, &psi_ds[0], &psi_ds[0], CUFFT_INVERSE));
 				for (auto batch_idx = 0; batch_idx < (Nstop-Nstart); ++batch_idx) {
-					multiply_inplace << < (psi_size - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0, stream >> >
+					multiply_inplace <<< (psi_size - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0, stream >>>
 							(psi_ds + (batch_idx * psi_size), &trans_d[planeNum * psi_size], psi_size);
 				}
 				cufftErrchk(PRISMATIC_CUFFT_EXECUTE(plan, &psi_ds[0], &psi_ds[0], CUFFT_FORWARD));
 				for (auto batch_idx = 0; batch_idx < (Nstop-Nstart); ++batch_idx) {
-					multiply_inplace << < (psi_size - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0, stream >> >
+					multiply_inplace <<< (psi_size - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0, stream >>>
 							(psi_ds + (batch_idx * psi_size), prop_d, psi_size);
-					divide_inplace << < (psi_size - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0, stream >> >
+					divide_inplace <<< (psi_size - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0, stream >>>
 							(psi_ds + (batch_idx * psi_size), PRISMATIC_MAKE_CU_COMPLEX(psi_size, 0), psi_size);
 				}
 				
 				if ( ((((planeNum+1) % pars.numSlices) == 0) && ((planeNum+1) >= pars.zStartPlane)) || ((planeNum+1) == pars.numPlanes) ){
 
-					abs_squared << < ( psi_size*(Nstop-Nstart) - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0, stream >> > (psiIntensity_ds, psi_ds, psi_size*(Nstop-Nstart));
+					abs_squared <<< ( psi_size*(Nstop-Nstart) - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0, stream >>> (psiIntensity_ds, psi_ds, psi_size*(Nstop-Nstart));
 					for (auto batch_idx = 0; batch_idx < (Nstop-Nstart); ++batch_idx) {
 						const size_t ay = (pars.meta.arbitraryProbes) ? 0 : (Nstart + batch_idx) / pars.numXprobes;
 						const size_t ax = (pars.meta.arbitraryProbes) ? (Nstart + batch_idx) : (Nstart + batch_idx) % pars.numXprobes;
@@ -803,7 +807,7 @@ namespace Prismatic{
 			const size_t ax = (pars.meta.arbitraryProbes) ? (Nstart + batch_idx) : (Nstart + batch_idx) % pars.numXprobes;
 			PRISMATIC_FLOAT_PRECISION yp = pars.yp[ay];
 			PRISMATIC_FLOAT_PRECISION xp = pars.xp[ax];
-			initializePsi << < (psi_size - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0, stream >> >
+			initializePsi <<< (psi_size - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0, stream >>>
 			                                                (psi_ds + (batch_idx * psi_size), PsiProbeInit_d, qya_d, qxa_d, psi_size, yp, xp);
 		}
 
@@ -815,20 +819,20 @@ namespace Prismatic{
 				cudaErrchk(cudaMemcpyAsync(trans_d, &trans_ph[planeNum*psi_size], psi_size * sizeof(PRISMATIC_CUDA_COMPLEX_FLOAT), cudaMemcpyHostToDevice, stream));
 				cufftErrchk(PRISMATIC_CUFFT_EXECUTE(plan, &psi_ds[0], &psi_ds[0], CUFFT_INVERSE));
 				for (auto batch_idx = 0; batch_idx < (Nstop-Nstart); ++batch_idx) {
-					multiply_inplace << < (psi_size - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0, stream >> >
+					multiply_inplace <<< (psi_size - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0, stream >>>
 																	(psi_ds + (batch_idx * psi_size), trans_d, psi_size);
 				}
 				cufftErrchk(PRISMATIC_CUFFT_EXECUTE(plan, &psi_ds[0], &psi_ds[0], CUFFT_FORWARD));
 				for (auto batch_idx = 0; batch_idx < (Nstop-Nstart); ++batch_idx) {
-					multiply_inplace << < (psi_size - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0, stream >> >
+					multiply_inplace <<< (psi_size - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0, stream >>>
 																	(psi_ds + (batch_idx * psi_size), prop_d, psi_size);
-					divide_inplace << < (psi_size - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0, stream >> >
+					divide_inplace <<< (psi_size - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0, stream >>>
 																	(psi_ds + (batch_idx * psi_size), PRISMATIC_MAKE_CU_COMPLEX(psi_size, 0), psi_size);
 				}
 
 
 				if ( ( ((planeNum+1) % pars.numSlices) == 0 && ((planeNum+1) >= pars.zStartPlane) ) || ((planeNum+1) == pars.numPlanes) ){
-					abs_squared << < (psi_size*(Nstop-Nstart) - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0, stream >> > (psiIntensity_ds, psi_ds, psi_size*(Nstop-Nstart));
+					abs_squared <<< (psi_size*(Nstop-Nstart) - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0, stream >>> (psiIntensity_ds, psi_ds, psi_size*(Nstop-Nstart));
 
 					for (auto batch_idx = 0; batch_idx < (Nstop-Nstart); ++batch_idx) {
 						const size_t ay = (pars.meta.arbitraryProbes) ? 0 : (Nstart + batch_idx) / pars.numXprobes;

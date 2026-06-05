@@ -13,7 +13,7 @@
 
 #include "utility.cuh"
 #include "utility.h"
-#include "cuComplex.h"
+#include "cuda_to_hip.h"
 #include <iostream>
 #include <sstream>
 #include <mutex>

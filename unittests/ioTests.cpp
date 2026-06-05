@@ -109,7 +109,7 @@ herr_t CBED_process(void *elem, hid_t type_id, unsigned ndim, const hsize_t *poi
         PRISMATIC_FLOAT_PRECISION* tmp_elem = (PRISMATIC_FLOAT_PRECISION *) elem;
         PRISMATIC_FLOAT_PRECISION* tmp_data = (PRISMATIC_FLOAT_PRECISION *) operator_data;
         *tmp_elem += *tmp_data;
-        operator_data++;
+        operator_data = (void*)((char*)operator_data + sizeof(PRISMATIC_FLOAT_PRECISION));
         return 0;
     }
     catch(...)

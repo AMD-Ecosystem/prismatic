@@ -40,11 +40,9 @@ inline void printHeader()
 }
 } // namespace Prismatic
 #ifdef PRISMATIC_ENABLE_GPU
-#include "cuComplex.h"
-#include <cuda_runtime.h>
+#include "cuda_to_hip.h"
 #include <cstdio>
 #include <cstdlib>
-#include "cufft.h"
 #include "H5Cpp.h"
 
 //#define BLOCK_SIZE1D 1024

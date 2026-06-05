@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.5)
 message("CMake prefix path: " ${CMAKE_PREFIX_PATH})
 project(PRISM)
 set(CMAKE_CXX_STANDARD 11)
+
+# HIP/ROCm support: include the shim before any CUDA code
+include(cmake/HIPShim.cmake)
 set(CMAKE_BUILD_TYPE RELEASE)
 
 # set warning level
@@ -137,12 +140,14 @@ include_directories(${CMAKE_SOURCE_DIR}/include
                     ${Boost_INCLUDE_DIRS}
                     ${FFTW_INCLUDE_DIRS}
                     ${HDF5_INCLUDE_DIRS})
-# find CUDA package, if building for GPU
-if (PRISMATIC_ENABLE_GPU)
-    message("GPU support enabled")
+# find CUDA package, if building for GPU (skip on HIP builds)
+if (PRISMATIC_ENABLE_GPU AND NOT USE_HIP)
+    message("GPU support enabled (CUDA)")
     find_package(CUDA REQUIRED)
     set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} ${NVCC_FLAGS_EXTRA})
-endif(PRISMATIC_ENABLE_GPU)
+elseif(PRISMATIC_ENABLE_GPU AND USE_HIP)
+    message("GPU support enabled (HIP/ROCm)")
+endif()
 
 # find Qt modules, if building GUI
 if (PRISMATIC_ENABLE_GUI)
@@ -330,6 +335,11 @@ if (PRISMATIC_TESTS)
     endif (PRISMATIC_ENABLE_GPU)
 
     target_compile_definitions(prismatic-tests PRIVATE "BOOST_TEST_DYN_LINK=1")
+
+    # HIP/clang is stricter about narrowing conversions; allow them in test code
+    if(USE_HIP)
+        target_compile_options(prismatic-tests PRIVATE -Wno-c++11-narrowing)
+    endif()
 
     target_link_libraries(prismatic-tests
         ${CMAKE_THREAD_LIBS_INIT}

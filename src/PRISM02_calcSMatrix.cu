@@ -17,7 +17,7 @@
 #include "PRISM02_calcSMatrix.h"
 #include <thread>
 #include "WorkDispatcher.h"
-#include "cufft.h"
+#include "cuda_to_hip.h"
 #include "utility.cuh"
 #include "params.cuh"
 
@@ -782,10 +782,15 @@ namespace Prismatic {
 			cudaErrchk(cudaStreamDestroy(cuda_pars.streams[j]));
 		}
 
+		// Skip cudaDeviceReset on HIP: hipDeviceReset destroys hipFFT internal
+		// state, causing subsequent hipfftPlanMany calls to fail with
+		// hipErrorInvalidValue. The memory/streams/plans are already freed above.
+#ifndef USE_HIP
 		for (auto g = 0; g < pars.meta.numGPUs; ++g){
 			cudaErrchk(cudaSetDevice(g));
 			cudaErrchk(cudaDeviceReset());
 		}
+#endif
 
 		delete[] cuda_pars.streams;
 		delete[] cuda_pars.cufftPlans;
@@ -874,14 +879,14 @@ namespace Prismatic {
 		for (auto planeNum = 0; planeNum < pars.numPlanes; ++planeNum) {
 			cufftErrchk(PRISMATIC_CUFFT_EXECUTE(plan, &psi_d[0], &psi_d[0], CUFFT_INVERSE));
 			for (auto batch_idx = 0; batch_idx < (stopBeam-beamNumber); ++batch_idx) {
-				multiply_cx << < (psi_size - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0, stream >> >
+				multiply_cx <<< (psi_size - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0, stream >>>
 						(psi_d + batch_idx*psi_size, &trans_d[planeNum * psi_size], psi_size); // transmit
 				divide_inplace<<<(psi_size - 1) / BLOCK_SIZE1D + 1,BLOCK_SIZE1D, 0, stream>>>
 						(psi_d + batch_idx*psi_size, PRISMATIC_MAKE_CU_COMPLEX(psi_size, 0), psi_size); // normalize FFT
 			}
 			cufftErrchk(PRISMATIC_CUFFT_EXECUTE(plan, &psi_d[0], &psi_d[0], CUFFT_FORWARD));
 			for (auto batch_idx = 0; batch_idx < (stopBeam-beamNumber); ++batch_idx) {
-				multiply_cx << < (psi_size - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0, stream >> >
+				multiply_cx <<< (psi_size - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0, stream >>>
 						(psi_d + batch_idx*psi_size, prop_d, psi_size); // propagate
 			}
 		}
@@ -896,8 +901,8 @@ namespace Prismatic {
 
 
 		for (auto batch_idx = 0; batch_idx < (stopBeam-beamNumber); ++batch_idx) {
-			array_subset << < (pars.qyInd.size() * pars.qxInd.size() - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0,
-					stream >> > (psi_d + batch_idx*psi_size, psi_small_d + batch_idx*psi_small_size, qyInd_d, qxInd_d, pars.imageSize[1], pars.qyInd.size(), pars.qxInd.size());
+			array_subset <<< (pars.qyInd.size() * pars.qxInd.size() - 1) / BLOCK_SIZE1D + 1, BLOCK_SIZE1D, 0,
+					stream >>> (psi_d + batch_idx*psi_size, psi_small_d + batch_idx*psi_small_size, qyInd_d, qxInd_d, pars.imageSize[1], pars.qyInd.size(), pars.qxInd.size());
 		}
 
 		PRISMATIC_CUFFT_EXECUTE(plan_small,&psi_small_d[0], &psi_small_d[0], CUFFT_INVERSE);

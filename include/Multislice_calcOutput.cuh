@@ -13,7 +13,7 @@
 
 #ifndef PRISMATIC_MULTISLICE_CUH
 #define PRISMATIC_MULTISLICE_CUH
-#include <cuda_runtime.h>
+#include "cuda_to_hip.h"
 #include "params.h"
 #include "configure.h"
 #include <complex>
