@@ -11,6 +11,13 @@
 #include "fileIO.h"
 #include "H5Cpp.h"
 #include <thread>
+#ifdef _WIN32
+#include <io.h>
+// Map POSIX file descriptor functions to their Windows equivalents
+inline int dup(int fd) { return _dup(fd); }
+inline int dup2(int fd1, int fd2) { return _dup2(fd1, fd2); }
+inline int close(int fd) { return _close(fd); }
+#endif
 
 namespace Prismatic{
 
