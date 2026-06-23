@@ -5,12 +5,9 @@
 option(USE_HIP "Build with HIP for AMD GPUs" OFF)
 
 if(USE_HIP)
+    # enable_language(HIP) honors an explicit -DCMAKE_HIP_ARCHITECTURES, otherwise
+    # auto-detects the host GPU(s), and errors on a no-GPU build host.
     enable_language(HIP)
-
-    # Default HIP architecture when not set by user
-    if(NOT DEFINED CMAKE_HIP_ARCHITECTURES OR CMAKE_HIP_ARCHITECTURES STREQUAL "")
-        set(CMAKE_HIP_ARCHITECTURES "gfx90a" CACHE STRING "HIP architectures")
-    endif()
 
     # Find hipFFT
     find_package(hipfft REQUIRED)
