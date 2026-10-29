@@ -21,7 +21,8 @@
 
 #include "Multislice_calcOutput.cuh"
 #include "Multislice_calcOutput.h"
-#include "cuda_to_hip.h"
+#include "cuComplex.h"
+#include "cufft.h"
 #include "utility.cuh"
 #include "fileIO.cuh"
 #include "params.cuh"

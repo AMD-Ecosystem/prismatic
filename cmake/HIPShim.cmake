@@ -15,6 +15,9 @@ if(USE_HIP)
     # Add USE_HIP definition
     add_definitions(-DUSE_HIP)
 
+    # Shadow cuda_runtime.h, cuComplex.h and cufft.h with HIP equivalents
+    include_directories(BEFORE ${CMAKE_SOURCE_DIR}/hip_compat)
+
     # Shim: cuda_add_executable -> add_executable with HIP language
     macro(cuda_add_executable target_name)
         set(_sources ${ARGN})

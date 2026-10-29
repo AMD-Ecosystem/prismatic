@@ -13,7 +13,7 @@
 
 #ifndef PRISMATIC_FILEIO_CUH
 #define PRISMATIC_FILEIO_CUH
-#include "cuda_to_hip.h"
+#include "cuComplex.h"
 #include "configure.h"
 #include "utility.h"
 __device__ __forceinline__ cuDoubleComplex exp_cx(const cuDoubleComplex a);

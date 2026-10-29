@@ -13,8 +13,8 @@
 
 #ifndef PRISMATIC_PRISM03_CUH
 #define PRISMATIC_PRISM03_CUH
-#include "cuda_to_hip.h"
 #include "configure.h"
+#include "cufft.h"
 #include "params.cuh"
 namespace Prismatic {
 	 void buildPRISMOutput_GPU_singlexfer(Parameters<PRISMATIC_FLOAT_PRECISION>& pars);

@@ -17,7 +17,7 @@
 #include "PRISM02_calcSMatrix.h"
 #include <thread>
 #include "WorkDispatcher.h"
-#include "cuda_to_hip.h"
+#include "cufft.h"
 #include "utility.cuh"
 #include "params.cuh"
 

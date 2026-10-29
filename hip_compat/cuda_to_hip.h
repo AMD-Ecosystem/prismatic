@@ -1,10 +1,10 @@
 // CUDA-to-HIP compatibility header for Prismatic
-// On HIP builds, aliases the CUDA spellings used throughout the codebase
-// to their HIP equivalents. On CUDA builds, this header is a no-op.
+// Aliases the CUDA spellings used throughout the codebase to their HIP
+// equivalents. This directory is on the include path only for HIP builds, where
+// the cuda_runtime.h, cuComplex.h and cufft.h next to this file stand in for the
+// CUDA headers of the same name.
 
 #pragma once
-
-#if defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__)
 
 #include <hip/hip_runtime.h>
 #include <hip/hip_complex.h>
@@ -80,10 +80,3 @@
 #define CUFFT_FORWARD           HIPFFT_FORWARD
 #define CUFFT_INVERSE           HIPFFT_BACKWARD
 #define CUFFT_SUCCESS           HIPFFT_SUCCESS
-
-#else
-// CUDA build: include the native headers
-#include <cuda_runtime.h>
-#include <cuComplex.h>
-#include <cufft.h>
-#endif
